@@ -57,6 +57,9 @@ class BillViewer:
         self.sum_tax_included_label.pack(anchor="e")
         self.sum_tax_included_label.bind("<ButtonRelease-1>", lambda event: self.copy_to_clipboard(event, "sum_tax_included"))
 
+        self.empty_label = tk.Label(self.total_info_text, text="-----------------", font=("Arial", 4), anchor="e")
+        self.empty_label.pack(anchor="e")
+
         self.leasing_cost_label = tk.Label(self.total_info_text, text="Leasing Cost: ", font=("Arial", 12), anchor="e", cursor="hand2")
         self.leasing_cost_label.pack(anchor="e")
         self.leasing_cost_label.bind("<ButtonRelease-1>", lambda event: self.copy_to_clipboard(event, "leasing_cost"))
