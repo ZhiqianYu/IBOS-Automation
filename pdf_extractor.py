@@ -55,7 +55,7 @@ class PDFExtractor:
                     # 车辆型号在合同号上面两行
                     vehicle_line = pages[i-2]
                     parts = vehicle_line.split()
-                    bill_data_head['vehicle_model'] = f"{parts[0]} {parts[1]}"
+                    bill_data_head['vehicle_model'] = f"{parts[0]}"
                 elif 'Rechnung exkl. MwSt.' in line:
                     # 开始解析详细支出项
                     for item_line in pages[i+1:]:
@@ -65,9 +65,16 @@ class PDFExtractor:
                             try:
                                 parts = item_line.split()
                                 tax_rate = parts[0].replace('%', '')
-                                item_name = ' '.join(parts[1:-2])
-                                amount = float(parts[-2].replace(',', '.'))
-                                tax = float(parts[-1].replace(',', '.'))
+                                if 'MwSt.' in item_line:
+                                    mwst_index = item_line.find('MwSt.') + len('MwSt.')
+                                    item_details = item_line[mwst_index:].strip().split()
+                                else:
+                                    item_details = parts[1:-2]
+
+                                item_name = ' '.join(item_details[:-2])  # 取 `MwSt.` 后面的部分
+                                amount = float(item_details[-2].replace(',', '.'))
+                                tax = float(item_details[-1].replace(',', '.'))
+
                                 bill_data_items['items'].append({
                                     'tax_rate': tax_rate,
                                     'item_name': item_name,
