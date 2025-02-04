@@ -19,7 +19,21 @@ class PDFExtractor:
 
             with pdfplumber.open(pdf_path) as pdf:
                 text = '\n'.join(page.extract_text() for page in pdf.pages[:2])
-                return self._parse_bill_text(text)
+                logger.debug(f"提取的文本内容: {text[:500]}")  # 记录前500个字符的文本内容
+                extracted_data = self._parse_bill_text(text)
+                if not extracted_data:
+                    logger.error("解析账单文本失败")
+                    return None
+
+                bill_data = {
+                    'bill_number': extracted_data['bill_number'],
+                    'date': extracted_data['date'],
+                    'user_name': extracted_data['driver_name'],
+                    'vehicle_name': extracted_data['vehicle_name'],
+                    'items': extracted_data['items']
+                }
+                logger.debug(f"提取的账单数据: {bill_data}")
+                return bill_data
 
         except Exception as e:
             logger.error(f"处理PDF时出错: {str(e)}")
@@ -33,7 +47,7 @@ class PDFExtractor:
             'bill_number': None,
             'date': None,
             'driver_name': None,
-            'vehicle_model': None
+            'vehicle_name': None
         }
 
         bill_data_items = {
@@ -55,7 +69,7 @@ class PDFExtractor:
                     # 车辆型号在合同号上面两行
                     vehicle_line = pages[i-2]
                     parts = vehicle_line.split()
-                    bill_data_head['vehicle_model'] = f"{parts[0]}"
+                    bill_data_head['vehicle_name'] = ''.join(parts[0]).strip().title()
                 elif 'Rechnung exkl. MwSt.' in line:
                     # 开始解析详细支出项
                     for item_line in pages[i+1:]:
@@ -74,13 +88,16 @@ class PDFExtractor:
                                 item_name = ' '.join(item_details[:-2])  # 取 `MwSt.` 后面的部分
                                 amount = float(item_details[-2].replace(',', '.'))
                                 tax = float(item_details[-1].replace(',', '.'))
+                                total_amount = amount + tax
 
                                 bill_data_items['items'].append({
                                     'tax_rate': tax_rate,
                                     'item_name': item_name,
                                     'amount': amount,
-                                    'tax': tax
+                                    'tax': tax,
+                                    'total_amount': total_amount
                                 })
+
                             except Exception as e:
                                 # 如果解析失败，记录错误行
                                 bill_data_items['errors'].append({
@@ -96,7 +113,26 @@ class PDFExtractor:
 
     def validate_data(self, data: Dict) -> bool:
         """
-        验证提取的数据是否完整
+        验证提取的数据是否有效
         """
-        required_fields = ['bill_number', 'date', 'driver_name', 'vehicle_model']
-        return all(data.get(field) for field in required_fields)
+        try:
+            if not data.get('bill_number'):
+                logger.error("账单号缺失")
+                return False
+            if not data.get('date'):
+                logger.error("日期缺失")
+                return False
+            if not data.get('user_name'):
+                logger.error("用户名缺失")
+                return False
+            if not data.get('vehicle_name'):
+                logger.error("车辆名称缺失")
+                return False
+            if not data.get('items'):
+                logger.error("账单项目缺失")
+                return False
+            logger.debug("账单数据验证通过")
+            return True
+        except Exception as e:
+            logger.exception(f"验证账单数据时发生异常: {e}")
+            return False
