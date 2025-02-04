@@ -1,1 +1,8 @@
 *.pdf
+*~
+*.log
+.vscode/
+__pycache__/
+*.py[cod]
+*.pyo
+.env
