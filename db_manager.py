@@ -1,24 +1,26 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+# db_manager.py
+import logging
+from typing import Dict, List
 
-Base = declarative_base()
+logger = logging.getLogger(__name__)
 
-class Bill(Base):
-    __tablename__ = 'bills'
-    id = Column(Integer, primary_key=True)
-    employee_id = Column(String)
-    amount = Column(Float)
-    date = Column(String)  # 实际项目建议用Date类型
-    department = Column(String)  # 后续通过Excel填充
+class DBManager:
+    def __init__(self, db_config: Dict):
+        """
+        初始化数据库连接
+        """
+        self.db_config = db_config
+        # 这里假设已经实现了数据库连接
+        logger.info("数据库连接已初始化")
 
-class Employee(Base):
-    __tablename__ = 'employees'
-    id = Column(Integer, primary_key=True)
-    employee_id = Column(String)
-    department = Column(String)
-
-# 初始化数据库
-engine = create_engine('sqlite:///bills.db')
-Base.metadata.create_all(engine)
-Session = sessionmaker(bind=engine)
+    def insert_bill_data(self, bill_data: Dict) -> bool:
+        """
+        将账单数据插入数据库
+        """
+        try:
+            # 这里假设已经实现了将 bill_data 插入数据库的逻辑
+            logger.info(f"插入账单数据: {bill_data}")
+            return True
+        except Exception as e:
+            logger.error(f"插入数据时出错: {str(e)}")
+            return False

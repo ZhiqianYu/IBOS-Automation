@@ -32,6 +32,7 @@ def main():
         if bill_data and extractor.validate_data(bill_data):
             for key, value in bill_data.items():
                 print(f"{key}: {value}")
+                print("Writing data to DB...")
         else:
             logger.error("数据提取失败")
 
