@@ -108,11 +108,11 @@ class BillViewer:
 
             # 查询账单基本信息
             cursor.execute("""
-                SELECT bills.bill_number, bills.date, employees.name, employees.vehicle_name, employees.department, bills.vehicle_model
+                SELECT bills.bill_number, bills.date, employees.name, employees.vehicle_name, employees.department, bills.vehicle_name
                 FROM bills
-                LEFT JOIN employees ON bills.employee_id = employees.id
-                WHERE bills.bill_number = ?
-            """, (bill_number,))
+                LEFT JOIN employees ON bills.user_name = employees.name AND bills.vehicle_name = employees.vehicle_name
+                WHERE bills.bill_number LIKE ?
+            """, (f"%{bill_number}%",))
             bill_info = cursor.fetchone()
 
             if not bill_info:
@@ -123,7 +123,7 @@ class BillViewer:
 
             # 查询账单明细
             cursor.execute("""
-                SELECT item_name, amount, tax
+                SELECT item_name, amount, tax, total_amount
                 FROM bill_items
                 WHERE bill_id = (SELECT id FROM bills WHERE bill_number = ?)
             """, (bill_number,))
@@ -158,7 +158,7 @@ class BillViewer:
         # 计算 Finanzleasingrate + Servicerate
         leasing_rate = sum(item[1] for item in items if item[0] == "Finanzleasingrate")
         service_rate = sum(item[1] for item in items if item[0] == "Servicerate")
-        leasing_service_total = leasing_rate + service_rate if leasing_rate and service_rate else 0
+        leasing_service_total = leasing_rate + service_rate
         leasing_tax = sum(item[2] for item in items if item[0] in ["Finanzleasingrate", "Servicerate"])
 
         # 更新账单信息文本
@@ -180,8 +180,8 @@ class BillViewer:
 
         # 添加新数据
         for item in items:
-            item_name, amount, tax = item
-            tax_included = amount  # 含税金额直接使用 amount
+            item_name, amount, tax, total_amount = item
+            tax_included = total_amount
             self.tree.insert("", "end", values=(item_name, f"{amount:.2f}", f"{tax:.2f}", f"{tax_included:.2f}"))
 
     def copy_to_clipboard(self, event, data_type=None):
