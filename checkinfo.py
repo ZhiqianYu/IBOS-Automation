@@ -45,15 +45,15 @@ class BillViewer:
         self.total_info_text = tk.Frame(self.info_frame)
         self.total_info_text.pack(side="right", padx=10)
 
-        self.sum_tax_excluded_label = tk.Label(self.total_info_text, text="Sum ohne Tax: ", font=("Arial", 12), anchor="e", cursor="hand2")
+        self.sum_tax_excluded_label = tk.Label(self.total_info_text, text="Bill Sum: ", font=("Arial", 12), anchor="e", cursor="hand2")
         self.sum_tax_excluded_label.pack(anchor="e")
         self.sum_tax_excluded_label.bind("<ButtonRelease-1>", lambda event: self.copy_to_clipboard(event, "sum_tax_excluded"))
 
-        self.sum_tax_label = tk.Label(self.total_info_text, text="Sum Tax: ", font=("Arial", 12), anchor="e", cursor="hand2")
+        self.sum_tax_label = tk.Label(self.total_info_text, text="Bill Tax: ", font=("Arial", 12), anchor="e", cursor="hand2")
         self.sum_tax_label.pack(anchor="e")
         self.sum_tax_label.bind("<ButtonRelease-1>", lambda event: self.copy_to_clipboard(event, "sum_tax"))
 
-        self.sum_tax_included_label = tk.Label(self.total_info_text, text="Sum mit Tax: ", font=("Arial", 12), anchor="e", cursor="hand2")
+        self.sum_tax_included_label = tk.Label(self.total_info_text, text="Sum with Tax: ", font=("Arial", 12), anchor="e", cursor="hand2")
         self.sum_tax_included_label.pack(anchor="e")
         self.sum_tax_included_label.bind("<ButtonRelease-1>", lambda event: self.copy_to_clipboard(event, "sum_tax_included"))
 
@@ -151,7 +151,7 @@ class BillViewer:
             formatted_date = "未知"
 
         # 计算金额
-        total_tax_included = sum(item[1] for item in items)  # 含税金额
+        total_tax_included = sum(item[1] + item[2] for item in items)  # 含税金额
         total_tax = sum(item[2] for item in items)  # 总税额
         total_tax_excluded = total_tax_included - total_tax  # 不含税金额
 
