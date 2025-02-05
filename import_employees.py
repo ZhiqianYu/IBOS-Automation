@@ -17,6 +17,7 @@ class EmployeeImporter:
         return re.sub(r'\d+', '', department).strip()
 
     def import_from_excel(self, excel_path: str):
+        """从 Excel 读取 name 和 cost center，并存入 employees 表"""
         excel_path = Path(excel_path)
         if not excel_path.exists():
             logger.error(f"Excel 文件不存在: {excel_path}")
@@ -33,103 +34,37 @@ class EmployeeImporter:
             df = pd.read_excel(excel_path, usecols=["Namen", "Cost Center", "Vehicle Name"])
             df.dropna(subset=["Namen"], inplace=True)  # 移除空的姓名行
             df["Cost Center"] = df["Cost Center"].apply(self.clean_department)
+            df["Vehicle Name"] = df["Vehicle Name"].fillna("")  # 填充车辆名称为空的行
+
+            employees = df.to_records(index=False)
 
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
                 for _, row in df.iterrows():
-                    name = str(row["Namen"]).strip().title()  # 去除前后空格并转换为统一大小写格式
-                    department = str(row["Cost Center"]).strip()
+                    name = row["Namen"]
+                    department = row["Cost Center"]
                     vehicle_name = row["Vehicle Name"]
 
-                    if vehicle_name:
-                        # **情况 1：如果 Excel 中有车辆信息**
-                        cursor.execute("SELECT id, name, department FROM employees WHERE vehicle_name = ?", (vehicle_name,))
-                        results = cursor.fetchall()
-                        if len(results) == 1:
-                            db_name, db_department = results[0][1], results[0][2]
-                            if db_department == 'Unknown':
-                                cursor.execute(
-                                    "UPDATE employees SET department = ? WHERE vehicle_name = ? AND department = 'Unknown'",
-                                    (department, vehicle_name)
-                                )
-                                logger.info(f"车辆匹配更新: {vehicle_name} -> {department}")
-                            else:
-                                logger.info(f"跳过已有部门信息的车辆: {vehicle_name}")
-                        elif len(results) > 1:
-                            logger.warning(f"车辆信息重复: {vehicle_name}，不更新数据")
-                        else:
-                            # 如果车辆信息未找到匹配项，则根据姓名查找
-                            cursor.execute("SELECT id, department FROM employees WHERE name = ?", (name,))
-                            results = cursor.fetchall()
-                            if len(results) == 1:
-                                db_department = results[0][1]
-                                if db_department == 'Unknown':
-                                    cursor.execute(
-                                        "UPDATE employees SET department = ? WHERE name = ? AND department = 'Unknown'",
-                                        (department, name)
-                                    )
-                                    logger.info(f"姓名匹配更新: {name} -> {department}")
-                                else:
-                                    logger.info(f"跳过已有部门信息的姓名: {name}")
-                            elif len(results) > 1:
-                                logger.warning(f"姓名信息重复: {name}，不更新数据")
-                            else:
-                                logger.warning(f"未找到匹配的车辆信息和姓名: {vehicle_name}, {name}，不更新数据")
-                    else:
-                        # **情况 2：如果 Excel 中没有车辆信息**
-                        cursor.execute("SELECT id, department FROM employees WHERE name = ?", (name,))
-                        results = cursor.fetchall()
-                        if len(results) == 1:
-                            db_department = results[0][1]
-                            if db_department == 'Unknown':
-                                cursor.execute(
-                                    "UPDATE employees SET department = ? WHERE name = ? AND department = 'Unknown'",
-                                    (department, name)
-                                )
-                                logger.info(f"姓名匹配更新: {name} -> {department}")
-                            else:
-                                logger.info(f"跳过已有部门信息的姓名: {name}")
-                                if vehicle_name:
-                                    cursor.execute("SELECT id, department FROM employees WHERE vehicle_name = ?", (vehicle_name,))
-                                    results = cursor.fetchall()
-                                    if len(results) == 1:
-                                        db_department = results[0][1]
-                                        if db_department == 'Unknown':
-                                            cursor.execute(
-                                                "UPDATE employees SET department = ? WHERE vehicle_name = ? AND department = 'Unknown'",
-                                                (department, vehicle_name)
-                                            )
-                                            logger.info(f"车辆匹配更新: {vehicle_name} -> {department}")
-                                        else:
-                                            logger.info(f"跳过已有部门信息的车辆: {vehicle_name}")
-                                    elif len(results) > 1:
-                                        logger.warning(f"车辆信息重复: {vehicle_name}，不更新数据")
-                                    else:
-                                        logger.warning(f"未找到匹配的车辆信息: {vehicle_name}，不更新数据")
-                        elif len(results) > 1:
-                            # 如果姓名查找是重复的，但是部门又不一样，则使用车辆信息查找数据库
-                            if vehicle_name:
-                                cursor.execute("SELECT id, department FROM employees WHERE vehicle_name = ?", (vehicle_name,))
-                                results = cursor.fetchall()
-                                if len(results) == 1:
-                                    db_department = results[0][1]
-                                    if db_department == 'Unknown':
-                                        cursor.execute(
-                                            "UPDATE employees SET department = ? WHERE vehicle_name = ? AND department = 'Unknown'",
-                                            (department, vehicle_name)
-                                        )
-                                        logger.info(f"车辆匹配更新: {vehicle_name} -> {department}")
-                                    else:
-                                        logger.info(f"姓名重复，使用车辆信息查询，已存在部门信息: {vehicle_name}")
-                                elif len(results) > 1:
-                                    logger.warning(f"车辆信息重复: {vehicle_name}，不更新数据")
-                                else:
-                                    logger.warning(f"未找到匹配的车辆信息: {vehicle_name}，不更新数据")
-                            else:
-                                logger.warning(f"姓名信息重复: {name}，缺少车辆信息无法匹配")
-                        else:
-                            logger.warning(f"未找到匹配的姓名: {name}，缺少车辆信息无法匹配")
+                    # 查询数据库中是否有多个相同 name 的记录
+                    cursor.execute("SELECT COUNT(*) FROM employees WHERE name = ?", (name,))
+                    name_count = cursor.fetchone()[0]
+
+                    if name_count == 1:  
+                        # **情况 1：如果 name 在数据库中是唯一的，直接更新**
+                        cursor.execute(
+                            "UPDATE employees SET department = ? WHERE name = ? AND department = 'Unknown'",
+                            (department, name)
+                        )
+                        logger.info(f"唯一姓名更新: {name} -> {department}")
+
+                    elif name_count > 1 and vehicle_name:  
+                        # **情况 2：如果 name 不唯一，且 Excel 里有 Vehicle Name，则使用 vehicle_name 进行匹配**
+                        cursor.execute(
+                            "UPDATE employees SET department = ? WHERE name = ? AND vehicle_name = ? AND department = 'Unknown'",
+                            (department, name, vehicle_name)
+                        )
+                        logger.info(f"匹配车辆更新: {name} ({vehicle_name}) -> {department}")
 
                 conn.commit()
                 logger.info(f"员工数据更新完成")

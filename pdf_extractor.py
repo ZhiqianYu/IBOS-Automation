@@ -58,8 +58,11 @@ class PDFExtractor:
         try:
             pages = text.split('\n')
             for i, line in enumerate(pages):
-                if 'Rechnung:' in line:
-                    bill_data_head['bill_number'] = line.split('Rechnung:')[1].split('/')[0].strip()
+                if 'Rechnung:' in line or 'Gutschrift:' in line:
+                    if 'Rechnung:' in line:
+                        bill_data_head['bill_number'] = line.split('Rechnung:')[1].split('/')[0].strip()
+                    elif 'Gutschrift:' in line:
+                        bill_data_head['bill_number'] = line.split('Gutschrift:')[1].split('/')[0].strip()
                 elif 'Oberhaching,' in line:
                     bill_data_head['date'] = line.split('Oberhaching,')[1].strip()
                 elif 'Vertragsnummer' in line:  # 找到第二页的合同号所在行
@@ -69,8 +72,8 @@ class PDFExtractor:
                     # 车辆型号在合同号上面两行
                     vehicle_line = pages[i-2]
                     parts = vehicle_line.split()
-                    bill_data_head['vehicle_name'] = ''.join(parts[0]).strip().title()
-                elif 'Rechnung exkl. MwSt.' in line:
+                    bill_data_head['vehicle_name'] = ''.join(parts[0]).strip().upper()
+                elif 'Rechnung exkl. MwSt.' in line or 'Gesamtsumme Gutschrift exkl. MwSt.' in line:
                     # 开始解析详细支出项
                     for item_line in pages[i+1:]:
                         if 'Total MwSt.' in item_line:
