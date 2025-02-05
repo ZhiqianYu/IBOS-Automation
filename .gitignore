@@ -10,3 +10,6 @@ __pycache__/
 *.db
 db_details.txt
 *.xlsx
+blob_storage/
+bills/
+webrtc_event_logs/
