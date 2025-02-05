@@ -1,56 +1,23 @@
 import sqlite3
 import tkinter as tk
 import pyperclip
-import webview
-import threading
 from tkinter import messagebox
 from tkinter import ttk
 from datetime import datetime
+
+driver_path = "C:\Users\zhiqianyu\OneDrive - MIDEA INTERNATIONAL CORPORATION COMPANY LIMITED\Coding\chromedriver-win64\chromedriver.exe"
 
 class BillViewer:
     def __init__(self, root, db_path):
         self.root = root
         self.db_path = db_path
-        self.root.title("Bill Info and Browser")
-        self.root.geometry("1400x800")  # Wider window to accommodate browser
+        self.root.title("Bill Info")
         
         # Set a minimum window size
         self.root.minsize(600, 400)
 
-        # Main container for left and right panels
-        self.main_frame = tk.Frame(root)
-        self.main_frame.pack(fill="both", expand=True)
-
-        # Left frame for bill viewer
-        self.left_frame = tk.Frame(self.main_frame, width=400)
-        self.left_frame.pack(side="left", fill="y", padx=10, pady=5)
-
-        # 确保左边框架的宽度固定
-        self.left_frame.pack_propagate(False)
-
-        # Right frame for web browser
-        self.right_frame = tk.Frame(self.main_frame)
-        self.right_frame.pack(side="right", fill="both", expand=True)
-
-        # Browser URL entry and go button
-        self.browser_control_frame = tk.Frame(self.right_frame)
-        self.browser_control_frame.pack(fill="x", padx=5, pady=5)
-
-        self.url_entry = tk.Entry(self.browser_control_frame, font=("Arial", 12))
-        self.url_entry.pack(side="left", expand=True, fill="x", padx=(0,5))
-
-        self.go_button = tk.Button(self.browser_control_frame, text="Go", command=self.load_url)
-        self.go_button.pack(side="right")
-
-        # Embed webview
-        self.webview_widget = tk.Frame(self.right_frame)
-        self.webview_widget.pack(fill="both", expand=True)
-
-        # Start webview in a separate thread
-        threading.Thread(target=self.init_webview, daemon=True).start()
-
         # 账单信息区域（上部）
-        self.info_frame = tk.Frame(self.left_frame)
+        self.info_frame = tk.Frame(root)
         self.info_frame.pack(fill="x", padx=10, pady=5, expand=False)
 
         # 左侧：账单基本信息
@@ -114,7 +81,7 @@ class BillViewer:
         self.leasing_tax_label.bind("<ButtonRelease-1>", lambda event: self.copy_to_clipboard(event, "leasing_tax"))
 
         # 账单明细表格（中部）
-        self.tree = ttk.Treeview(self.left_frame, columns=("Items", "Amount", "Tax", "Sum"), show="headings", height=8)
+        self.tree = ttk.Treeview(root, columns=("Items", "Amount", "Tax", "Sum"), show="headings", height=8)
         style = ttk.Style()
         style.configure("Treeview.Heading", font=("Arial", 12))
         style.configure("Treeview", font=("Arial", 12))
@@ -133,7 +100,7 @@ class BillViewer:
         style.configure("Treeview", font=("Arial", 12))
 
         # 查询输入框 + 按钮（底部）
-        self.input_frame = tk.Frame(self.left_frame)
+        self.input_frame = tk.Frame(root)
         self.input_frame.pack(fill="x", padx=10, pady=5)
 
         self.entry = tk.Entry(self.input_frame, font=("Arial", 12))
@@ -143,19 +110,29 @@ class BillViewer:
         self.search_button.pack(side="right", padx=5)
         self.entry.bind("<Return>", lambda event: self.fetch_and_display())
 
+        # 添加自动填写表单按钮
+        self.auto_fill_button = tk.Button(self.input_frame, text="自动填写表单", font=("Arial", 12), height=1, command=self.auto_fill_form)
+        self.auto_fill_button.pack(side="right", padx=5)
+
         # 绑定点击复制事件
         self.tree.bind("<ButtonRelease-1>", self.copy_to_clipboard)
 
-    def init_webview(self):
-        # This will run in the main thread
-        self.browser = webview.create_window('Browser', url='https://www.google.com', width=1000, height=800, resizable=True, frameless=False, easy_drag=False)
-        webview.start()
+    def auto_fill_form(self):
+        # 获取当前显示的账单信息
+        bill_info = {
+            "bill_number": self.bill_number_label.cget("text").split(": ")[1],
+            "date": self.date_label.cget("text").split(": ")[1],
+            "user": self.user_label.cget("text").split(": ")[1],
+            "vehicle": self.vehicle_label.cget("text").split(": ")[1],
+            "department": self.department_label.cget("text").split(": ")[1]
+        }
 
-    def load_url(self):
-        url = self.url_entry.get()
-        if not url.startswith(('http://', 'https://')):
-            url = 'https://' + url
-        webview.evaluate_js(f'window.location.href="{url}";')
+        # 启动自动填写表单
+        url = "https://ibs-eu.midea.com"
+        form_filler = WebFormFiller(driver_path, url)
+        form_filler.start_browser()
+        form_filler.fill_form(bill_info)
+        form_filler.close_browser()
 
     def fetch_bill_data(self, bill_number):
         with sqlite3.connect(self.db_path) as conn:
