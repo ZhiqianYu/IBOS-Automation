@@ -99,9 +99,16 @@ class BillViewer:
         style = ttk.Style()
         style.configure("Treeview", font=("Arial", 12))
 
-        # 查询输入框 + 按钮（底部）
+        # Modified input frame to include a radio button for search type
         self.input_frame = tk.Frame(root)
         self.input_frame.pack(fill="x", padx=10, pady=5)
+
+        # Add radio buttons for search type
+        self.search_type = tk.StringVar(value="bill")
+        self.bill_radio = tk.Radiobutton(self.input_frame, text="账单号", variable=self.search_type, value="bill", font=("Arial", 10))
+        self.bill_radio.pack(side="left", padx=5)
+        self.employee_radio = tk.Radiobutton(self.input_frame, text="用户名", variable=self.search_type, value="employee", font=("Arial", 10))
+        self.employee_radio.pack(side="left", padx=5)
 
         self.entry = tk.Entry(self.input_frame, font=("Arial", 12))
         self.entry.pack(side="left", padx=5, expand=True, fill="x")
@@ -110,94 +117,118 @@ class BillViewer:
         self.search_button.pack(side="right", padx=5)
         self.entry.bind("<Return>", lambda event: self.fetch_and_display())
 
-        # 添加打开 PDF 按钮
         self.open_pdf_button = tk.Button(self.input_frame, text="打开", font=("Arial", 10), height=1, command=self.open_pdf)
         self.open_pdf_button.pack(side="right", padx=5)
 
         # 绑定点击复制事件
         self.tree.bind("<ButtonRelease-1>", self.copy_to_clipboard)
 
-    def fetch_bill_data(self, bill_number):
+    def fetch_bill_data(self, search_term):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # 查询账单基本信息
-            cursor.execute("""
-                SELECT bills.bill_number, bills.date, employees.name, employees.vehicle_name, employees.department, bills.vehicle_name
-                FROM bills
-                LEFT JOIN employees ON bills.user_name = employees.name AND bills.vehicle_name = employees.vehicle_name
-                WHERE bills.bill_number LIKE ?
-            """, (f"%{bill_number}%",))
+            if self.search_type.get() == "bill":
+                # Original bill number search
+                cursor.execute("""
+                    SELECT bills.bill_number, bills.date, employees.name, employees.vehicle_name, employees.department, bills.vehicle_name
+                    FROM bills
+                    LEFT JOIN employees ON bills.user_name = employees.name AND bills.vehicle_name = employees.vehicle_name
+                    WHERE bills.bill_number LIKE ?
+                """, (f"%{search_term}%",))
+            else:
+                # New employee name search
+                cursor.execute("""
+                    SELECT bills.bill_number, bills.date, employees.name, employees.vehicle_name, employees.department, bills.vehicle_name
+                    FROM employees
+                    LEFT JOIN bills ON employees.name = bills.user_name
+                    WHERE employees.name LIKE ?
+                    LIMIT 1
+                """, (f"%{search_term}%",))
+
             bill_info = cursor.fetchone()
 
             if not bill_info:
-                messagebox.showerror("查询失败", f"未找到账单号 {bill_number} 对应的记录")
+                if self.search_type.get() == "bill":
+                    messagebox.showerror("查询失败", f"未找到账单号 {search_term} 对应的记录")
+                else:
+                    messagebox.showerror("查询失败", f"未找到用户名 {search_term} 对应的记录")
                 return None, None
 
             bill_number, date, user, vehicle, department, vehicle_model = bill_info
 
-            # 查询账单明细
-            cursor.execute("""
-                SELECT item_name, amount, tax, total_amount
-                FROM bill_items
-                WHERE bill_id = (SELECT id FROM bills WHERE bill_number = ?)
-            """, (bill_number,))
-            items = cursor.fetchall()
+            # Only fetch bill items if we have a valid bill number
+            if bill_number:
+                cursor.execute("""
+                    SELECT item_name, amount, tax, total_amount
+                    FROM bill_items
+                    WHERE bill_id = (SELECT id FROM bills WHERE bill_number = ?)
+                """, (bill_number,))
+                items = cursor.fetchall()
+            else:
+                items = []
 
             return (bill_number, date, user, vehicle, department, vehicle_model), items
 
     def fetch_and_display(self):
-        bill_number = self.entry.get().strip()
-        if not bill_number:
-            messagebox.showwarning("Wrong Data", "Please enter a bill number")
+        search_term = self.entry.get().strip()
+        if not search_term:
+            messagebox.showwarning("Wrong Data", "请输入查询内容")
             return
 
-        bill_info, items = self.fetch_bill_data(bill_number)
+        bill_info, items = self.fetch_bill_data(search_term)
         if bill_info is None:
             return
 
         bill_number, date, user, vehicle, department, vehicle_model = bill_info
 
-        # 格式化日期为年-月-日
+        # Format date if available
         if date:
-            parsed_date = datetime.strptime(date, "%d.%m.%Y")
-            formatted_date = parsed_date.strftime("%Y-%m-%d")
+            try:
+                parsed_date = datetime.strptime(date, "%d.%m.%Y")
+                formatted_date = parsed_date.strftime("%Y-%m-%d")
+            except:
+                formatted_date = "未知"
         else:
             formatted_date = "未知"
 
-        # 计算金额
-        total_tax_included = sum(item[1] + item[2] for item in items)  # 含税金额
-        total_tax = sum(item[2] for item in items)  # 总税额
-        total_tax_excluded = total_tax_included - total_tax  # 不含税金额
-
-        # 计算 Finanzleasingrate + Servicerate
-        leasing_rate = sum(item[1] for item in items if item[0] == "Finanzleasingrate")
-        service_rate = sum(item[1] for item in items if item[0] == "Servicerate")
-        leasing_service_total = leasing_rate + service_rate
-        leasing_tax = sum(item[2] for item in items if item[0] in ["Finanzleasingrate", "Servicerate"])
-
-        # 更新账单信息文本
-        self.bill_number_label.config(text=f"Invoice Number: {bill_number}")
+        # Update labels
+        self.bill_number_label.config(text=f"Invoice Number: {bill_number if bill_number else '未知'}")
         self.date_label.config(text=f"Datum: {formatted_date}")
         self.user_label.config(text=f"Benutzername: {user if user else '未知'}")
         self.vehicle_label.config(text=f"Vehicle Name: {vehicle if vehicle else vehicle_model if vehicle_model else '未知'}")
         self.department_label.config(text=f"Department: {department if department else '未知'}")
 
-        # 更新金额信息文本
-        self.sum_tax_excluded_label.config(text=f"Sum ohne Tax: {total_tax_excluded:.2f}")
-        self.sum_tax_label.config(text=f"Sum Tax: {total_tax:.2f}")
-        self.sum_tax_included_label.config(text=f"Sum mit Tax: {total_tax_included:.2f}")
-        self.leasing_cost_label.config(text=f"Leasing Cost: {leasing_service_total:.2f}")
-        self.leasing_tax_label.config(text=f"Leasing Tax: {leasing_tax:.2f}")
-
-        # 清空旧数据
+        # Clear the tree
         self.tree.delete(*self.tree.get_children())
 
-        # 添加新数据
-        for item in items:
-            item_name, amount, tax, total_amount = item
-            tax_included = total_amount
-            self.tree.insert("", "end", values=(item_name, f"{amount:.2f}", f"{tax:.2f}", f"{tax_included:.2f}"))
+        if items:
+            # Calculate and display financial information
+            total_tax_included = sum(item[1] + item[2] for item in items)
+            total_tax = sum(item[2] for item in items)
+            total_tax_excluded = total_tax_included - total_tax
+
+            leasing_rate = sum(item[1] for item in items if item[0] == "Finanzleasingrate")
+            service_rate = sum(item[1] for item in items if item[0] == "Servicerate")
+            leasing_service_total = leasing_rate + service_rate
+            leasing_tax = sum(item[2] for item in items if item[0] in ["Finanzleasingrate", "Servicerate"])
+
+            self.sum_tax_excluded_label.config(text=f"Sum ohne Tax: {total_tax_excluded:.2f}")
+            self.sum_tax_label.config(text=f"Sum Tax: {total_tax:.2f}")
+            self.sum_tax_included_label.config(text=f"Sum mit Tax: {total_tax_included:.2f}")
+            self.leasing_cost_label.config(text=f"Leasing Cost: {leasing_service_total:.2f}")
+            self.leasing_tax_label.config(text=f"Leasing Tax: {leasing_tax:.2f}")
+
+            # Display items in tree
+            for item in items:
+                item_name, amount, tax, total_amount = item
+                self.tree.insert("", "end", values=(item_name, f"{amount:.2f}", f"{tax:.2f}", f"{total_amount:.2f}"))
+        else:
+            # Clear financial information if no items
+            self.sum_tax_excluded_label.config(text="Sum ohne Tax: 0.00")
+            self.sum_tax_label.config(text="Sum Tax: 0.00")
+            self.sum_tax_included_label.config(text="Sum mit Tax: 0.00")
+            self.leasing_cost_label.config(text="Leasing Cost: 0.00")
+            self.leasing_tax_label.config(text="Leasing Tax: 0.00")
 
     def copy_to_clipboard(self, event, data_type=None):
         if data_type:
@@ -222,7 +253,6 @@ class BillViewer:
                         text_to_copy = item_values[col_index]  # 获取选中的文本
                         pyperclip.copy(text_to_copy)  # 复制到剪贴板
                         self.status_label.config(text=f"已复制: {text_to_copy}")  # 显示复制成功
-                        self.root.after(3000, lambda: self.status_label.config(text=""))  # 3秒后清除提示
 
     def open_pdf(self):
         bill_number = self.entry.get().strip()
