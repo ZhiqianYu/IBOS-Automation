@@ -12,9 +12,28 @@ class BillViewer:
         self.root = root
         self.db_path = db_path
         self.root.title("Bill Info")
-        
-        # Set a minimum window size
         self.root.minsize(600, 400)
+
+        # Add a frame for invoice list
+        self.invoice_list_frame = tk.Frame(root)
+        self.invoice_list_frame.pack(fill="x", padx=10, pady=5, expand=True)
+        self.invoice_list_frame.pack_forget()  # Hide by default
+
+        # Add label for invoice list
+        self.invoice_list_label = tk.Label(self.invoice_list_frame, text="Related Bills:", font=("Arial", 12))
+        self.invoice_list_label.pack(anchor="w")
+
+        # Add listbox for invoices with scrollbar
+        self.listbox_frame = tk.Frame(self.invoice_list_frame)
+        self.listbox_frame.pack(fill="both", expand=True)
+        
+        self.invoice_listbox = tk.Listbox(self.listbox_frame, font=("Arial", 12), height=4)
+        self.scrollbar = tk.Scrollbar(self.listbox_frame, orient="vertical", command=self.invoice_listbox.yview)
+        self.invoice_listbox.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.invoice_listbox.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        self.invoice_listbox.bind('<<ListboxSelect>>', self.on_select_invoice)
 
         # 账单信息区域（上部）
         self.info_frame = tk.Frame(root)
@@ -105,9 +124,13 @@ class BillViewer:
 
         # Add radio buttons for search type
         self.search_type = tk.StringVar(value="bill")
-        self.bill_radio = tk.Radiobutton(self.input_frame, text="账单号", variable=self.search_type, value="bill", font=("Arial", 10))
+        self.bill_radio = tk.Radiobutton(self.input_frame, text="账单号", variable=self.search_type, 
+                                       value="bill", font=("Arial", 10), 
+                                       command=self.on_search_type_change)
         self.bill_radio.pack(side="left", padx=5)
-        self.employee_radio = tk.Radiobutton(self.input_frame, text="用户名", variable=self.search_type, value="employee", font=("Arial", 10))
+        self.employee_radio = tk.Radiobutton(self.input_frame, text="用户名", variable=self.search_type, 
+                                           value="employee", font=("Arial", 10),
+                                           command=self.on_search_type_change)
         self.employee_radio.pack(side="left", padx=5)
 
         self.entry = tk.Entry(self.input_frame, font=("Arial", 12))
@@ -122,6 +145,45 @@ class BillViewer:
 
         # 绑定点击复制事件
         self.tree.bind("<ButtonRelease-1>", self.copy_to_clipboard)
+
+    def on_search_type_change(self):
+        """Handle search type change"""
+        if self.search_type.get() == "bill":
+            self.invoice_list_frame.pack_forget()  # 切换到账单号搜索时隐藏 Related Bills 框架
+            self.clear_display()
+            self.entry.delete(0, tk.END)
+        else:
+            # 切换到用户名搜索时，保持 Related Bills 框架显示
+            pass
+
+    def toggle_invoice_list(self):
+        """Toggle visibility of invoice list based on search type"""
+        if self.search_type.get() == "employee":
+            self.invoice_list_frame.pack(fill="x", padx=10, pady=5, after=self.input_frame)
+        else:
+            self.invoice_list_frame.pack_forget()
+
+    def fetch_user_bills(self, username):
+        """Fetch all bills for a given username"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT bills.bill_number
+                FROM bills
+                WHERE bills.user_name LIKE ?
+                ORDER BY bills.date DESC
+            """, (f"%{username}%",))
+            return [row[0] for row in cursor.fetchall()]
+        
+    def on_select_invoice(self, event):
+        """Handle invoice selection from listbox"""
+        if not self.invoice_listbox.curselection():
+            return
+        selected_invoice = self.invoice_listbox.get(self.invoice_listbox.curselection())
+        self.entry.delete(0, tk.END)
+        self.entry.insert(0, selected_invoice)
+        self.search_type.set("bill")  # 切换到账单号查询模式
+        self.fetch_and_display()  # 直接查询详细信息
 
     def fetch_bill_data(self, search_term):
         with sqlite3.connect(self.db_path) as conn:
@@ -175,21 +237,81 @@ class BillViewer:
             messagebox.showwarning("Wrong Data", "请输入查询内容")
             return
 
-        bill_info, items = self.fetch_bill_data(search_term)
-        if bill_info is None:
+        if self.search_type.get() == "employee":
+            # 使用用户名搜索
+            bills = self.fetch_user_bills(search_term)
+            if not bills:
+                messagebox.showwarning("未找到记录", f"未找到用户名 {search_term} 的账单记录")
+                return
+            
+            # 清空并更新账单列表
+            self.invoice_listbox.delete(0, tk.END)
+            for bill in bills:
+                self.invoice_listbox.insert(tk.END, bill)
+            
+            if len(bills) > 1:
+                # 如果有多个账单，显示 Related Bills 框架
+                self.invoice_list_frame.pack(fill="x", padx=10, pady=5, expand=True)
+                # 清空当前显示，直到用户选择具体的账单
+                self.clear_display()
+            else:
+                # 如果只有一个账单，隐藏列表并直接显示详细信息
+                self.invoice_list_frame.pack_forget()
+                bill_info, items = self.fetch_bill_data(bills[0])
+                if bill_info is not None:
+                    self.update_display(bill_info, items)
             return
+        
+        # 使用账单号搜索
+        self.invoice_list_frame.pack_forget()  # 隐藏 Related Bills 框架
+        bill_info, items = self.fetch_bill_data(search_term)
+        if bill_info is not None:
+            self.update_display(bill_info, items)
+    
+    def clear_display(self):
+        """Clear all display fields"""
+        self.bill_number_label.config(text="Invoice Number: ")
+        self.date_label.config(text="Datum: ")
+        self.user_label.config(text="Benutzername: ")
+        self.vehicle_label.config(text="Vehicle Name: ")
+        self.department_label.config(text="Department: ")
+        self.sum_tax_excluded_label.config(text="Sum ohne Tax: 0.00")
+        self.sum_tax_label.config(text="Sum Tax: 0.00")
+        self.sum_tax_included_label.config(text="Sum mit Tax: 0.00")
+        self.leasing_cost_label.config(text="Leasing Cost: 0.00")
+        self.leasing_tax_label.config(text="Leasing Tax: 0.00")
+        self.tree.delete(*self.tree.get_children())
 
+    def on_select_invoice(self, event):
+        """Handle invoice selection from listbox"""
+        if not self.invoice_listbox.curselection():
+            return
+        
+        # 获取选中的账单号
+        selected_invoice = self.invoice_listbox.get(self.invoice_listbox.curselection())
+        
+        # 清空输入框并填入选中的账单号
+        self.entry.delete(0, tk.END)
+        self.entry.insert(0, selected_invoice)
+        
+        # 切换到账单号搜索模式
+        self.search_type.set("bill")  # 设置为账单号搜索模式
+        
+        # 直接调用查询方法
+        self.fetch_and_display()
+
+    def update_display(self, bill_info, items):
+        """Update the display with bill information"""
         bill_number, date, user, vehicle, department, vehicle_model = bill_info
 
         # Format date if available
+        formatted_date = "未知"
         if date:
             try:
                 parsed_date = datetime.strptime(date, "%d.%m.%Y")
                 formatted_date = parsed_date.strftime("%Y-%m-%d")
             except:
-                formatted_date = "未知"
-        else:
-            formatted_date = "未知"
+                pass
 
         # Update labels
         self.bill_number_label.config(text=f"Invoice Number: {bill_number if bill_number else '未知'}")
@@ -198,7 +320,7 @@ class BillViewer:
         self.vehicle_label.config(text=f"Vehicle Name: {vehicle if vehicle else vehicle_model if vehicle_model else '未知'}")
         self.department_label.config(text=f"Department: {department if department else '未知'}")
 
-        # Clear the tree
+        # Clear and update the tree
         self.tree.delete(*self.tree.get_children())
 
         if items:
@@ -212,6 +334,7 @@ class BillViewer:
             leasing_service_total = leasing_rate + service_rate
             leasing_tax = sum(item[2] for item in items if item[0] in ["Finanzleasingrate", "Servicerate"])
 
+            # Update financial labels
             self.sum_tax_excluded_label.config(text=f"Sum ohne Tax: {total_tax_excluded:.2f}")
             self.sum_tax_label.config(text=f"Sum Tax: {total_tax:.2f}")
             self.sum_tax_included_label.config(text=f"Sum mit Tax: {total_tax_included:.2f}")
