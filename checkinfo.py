@@ -4,6 +4,8 @@ import pyperclip
 from tkinter import messagebox
 from tkinter import ttk
 from datetime import datetime
+import os
+import subprocess
 
 class BillViewer:
     def __init__(self, root, db_path):
@@ -104,9 +106,13 @@ class BillViewer:
         self.entry = tk.Entry(self.input_frame, font=("Arial", 12))
         self.entry.pack(side="left", padx=5, expand=True, fill="x")
 
-        self.search_button = tk.Button(self.input_frame, text="查询", font=("Arial", 12), height=1, command=self.fetch_and_display)
+        self.search_button = tk.Button(self.input_frame, text="查询", font=("Arial", 10), height=1, command=self.fetch_and_display)
         self.search_button.pack(side="right", padx=5)
         self.entry.bind("<Return>", lambda event: self.fetch_and_display())
+
+        # 添加打开 PDF 按钮
+        self.open_pdf_button = tk.Button(self.input_frame, text="打开", font=("Arial", 10), height=1, command=self.open_pdf)
+        self.open_pdf_button.pack(side="right", padx=5)
 
         # 绑定点击复制事件
         self.tree.bind("<ButtonRelease-1>", self.copy_to_clipboard)
@@ -217,6 +223,30 @@ class BillViewer:
                         pyperclip.copy(text_to_copy)  # 复制到剪贴板
                         self.status_label.config(text=f"已复制: {text_to_copy}")  # 显示复制成功
                         self.root.after(3000, lambda: self.status_label.config(text=""))  # 3秒后清除提示
+
+    def open_pdf(self):
+        bill_number = self.entry.get().strip()
+        if not bill_number:
+            messagebox.showwarning("错误", "请输入账单号")
+            return
+
+        # 在 Bills 文件夹中查找包含账单号的 PDF 文件
+        bills_folder = "Bills"
+        pdf_files = [f for f in os.listdir(bills_folder) if f.endswith(".pdf") and bill_number in f]
+
+        if not pdf_files:
+            messagebox.showwarning("未找到文件", f"未找到包含账单号 {bill_number} 的 PDF 文件")
+            return
+
+        # 打开第一个匹配的 PDF 文件
+        pdf_path = os.path.join(bills_folder, pdf_files[0])
+        try:
+            if os.name == "nt":  # Windows
+                os.startfile(pdf_path)
+            elif os.name == "posix":  # macOS 或 Linux
+                subprocess.run(["open", pdf_path] if os.uname().sysname == "Darwin" else ["xdg-open", pdf_path])
+        except Exception as e:
+            messagebox.showerror("打开文件失败", f"无法打开 PDF 文件: {e}")
 
 if __name__ == "__main__":
     import argparse
