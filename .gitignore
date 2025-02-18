@@ -13,3 +13,5 @@ db_details.txt
 blob_storage/
 bills/
 webrtc_event_logs/
+*.db-shm
+*.db-wal
