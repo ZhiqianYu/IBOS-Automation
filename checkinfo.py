@@ -148,10 +148,12 @@ class BillViewer:
 
     def on_search_type_change(self):
         """Handle search type change"""
+        # Clear the input field when switching search types
+        self.entry.delete(0, tk.END)
+        
         if self.search_type.get() == "bill":
-            self.invoice_list_frame.pack_forget()  # 切换到账单号搜索时隐藏 Related Bills 框架
+            self.invoice_list_frame.pack_forget()  # Hide invoice list frame when searching by bill number
             self.clear_display()
-            self.entry.delete(0, tk.END)
         else:
             # 切换到用户名搜索时，保持 Related Bills 框架显示
             pass
@@ -198,12 +200,13 @@ class BillViewer:
                     WHERE bills.bill_number LIKE ?
                 """, (f"%{search_term}%",))
             else:
-                # New employee name search
+                # Employee name search - modified to actually find bills
                 cursor.execute("""
-                    SELECT bills.bill_number, bills.date, employees.name, employees.vehicle_name, employees.department, bills.vehicle_name
-                    FROM employees
-                    LEFT JOIN bills ON employees.name = bills.user_name
-                    WHERE employees.name LIKE ?
+                    SELECT bills.bill_number, bills.date, bills.user_name, employees.vehicle_name, employees.department, bills.vehicle_name
+                    FROM bills
+                    LEFT JOIN employees ON bills.user_name = employees.name
+                    WHERE bills.user_name LIKE ?
+                    ORDER BY bills.date DESC
                     LIMIT 1
                 """, (f"%{search_term}%",))
 
@@ -238,32 +241,40 @@ class BillViewer:
             return
 
         if self.search_type.get() == "employee":
-            # 使用用户名搜索
+            # Username search
             bills = self.fetch_user_bills(search_term)
             if not bills:
                 messagebox.showwarning("未找到记录", f"未找到用户名 {search_term} 的账单记录")
                 return
             
-            # 清空并更新账单列表
-            self.invoice_listbox.delete(0, tk.END)
-            for bill in bills:
-                self.invoice_listbox.insert(tk.END, bill)
-            
-            if len(bills) > 1:
-                # 如果有多个账单，显示 Related Bills 框架
-                self.invoice_list_frame.pack(fill="x", padx=10, pady=5, expand=True)
-                # 清空当前显示，直到用户选择具体的账单
-                self.clear_display()
-            else:
-                # 如果只有一个账单，隐藏列表并直接显示详细信息
+            if len(bills) == 1:
+                # If only one bill is found, automatically switch to bill number search
                 self.invoice_list_frame.pack_forget()
+                self.search_type.set("bill")  # Switch to bill number search mode
+                self.bill_radio.select()  # Select the bill radio button
+                
+                # Use the bill number to search
+                self.entry.delete(0, tk.END)
+                self.entry.insert(0, bills[0])
+                
+                # Fetch and display this bill
                 bill_info, items = self.fetch_bill_data(bills[0])
                 if bill_info is not None:
                     self.update_display(bill_info, items)
+            else:
+                # If multiple bills, show the list
+                self.invoice_listbox.delete(0, tk.END)
+                for bill in bills:
+                    self.invoice_listbox.insert(tk.END, bill)
+                
+                # Show the invoice list frame
+                self.invoice_list_frame.pack(fill="x", padx=10, pady=5, after=self.input_frame)
+                # Clear current display until user selects a specific bill
+                self.clear_display()
             return
         
-        # 使用账单号搜索
-        self.invoice_list_frame.pack_forget()  # 隐藏 Related Bills 框架
+        # Bill number search
+        self.invoice_list_frame.pack_forget()  # Hide invoice list frame
         bill_info, items = self.fetch_bill_data(search_term)
         if bill_info is not None:
             self.update_display(bill_info, items)
